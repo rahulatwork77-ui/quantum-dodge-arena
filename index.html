@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quantum Dodge Arena</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+      color: #f8fafc;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #gameContainer {
+      position: relative;
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #030712;
+    }
+    canvas { display: block; }
+    .hud {
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      pointer-events: none;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.88);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      backdrop-filter: blur(4px);
+    }
+    .overlay h1 {
+      font-size: 2.4rem;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .btn {
+      padding: 12px 28px;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 0 20px rgba(37, 99, 235, 0.5);
+      transition: transform 0.15s ease;
+    }
+    .btn:hover { transform: scale(1.05); }
+    .footer { margin-top: 12px; color: #64748b; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="600" height="500"></canvas>
+    <div class="hud">
+      <div>SCORE: <span id="scoreVal" style="color: #38bdf8;">0</span></div>
+      <div>BEST: <span id="bestVal" style="color: #a855f7;">0</span></div>
+    </div>
+    <div id="startOverlay" class="overlay">
+      <h1>QUANTUM DODGE</h1>
+      <p style="color: #94a3b8;">Use Arrow Keys / WASD or Mouse to dodge quantum anomalies</p>
+      <button class="btn" id="startBtn">START MISSION</button>
+    </div>
+    <div id="gameOverOverlay" class="overlay" style="display: none;">
+      <h1 style="background: linear-gradient(90deg, #ef4444, #f97316); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">SYSTEM BREACH</h1>
+      <p>Final Score: <span id="finalScore" style="color: #38bdf8; font-weight: bold;">0</span></p>
+      <button class="btn" id="restartBtn">RETRY</button>
+    </div>
+  </div>
+  <div class="footer">Built with HTML5 Canvas & JavaScript</div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreVal = document.getElementById('scoreVal');
+    const bestVal = document.getElementById('bestVal');
+    const finalScore = document.getElementById('finalScore');
+    const startOverlay = document.getElementById('startOverlay');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+
+    let player = { x: 300, y: 250, r: 14, speed: 6 };
+    let enemies = [];
+    let particles = [];
+    let score = 0;
+    let best = localStorage.getItem('qd_best') || 0;
+    bestVal.textContent = best;
+    let isRunning = false;
+    let spawnTimer = 0;
+    const keys = {};
+
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    canvas.addEventListener('mousemove', e => {
+      if (!isRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      player.x = Math.max(player.r, Math.min(canvas.width - player.r, e.clientX - rect.left));
+      player.y = Math.max(player.r, Math.min(canvas.height - player.r, e.clientY - rect.top));
+    });
+
+    function spawnEnemy() {
+      const edge = Math.floor(Math.random() * 4);
+      let x, y;
+      if (edge === 0) { x = Math.random() * canvas.width; y = -20; }
+      else if (edge === 1) { x = canvas.width + 20; y = Math.random() * canvas.height; }
+      else if (edge === 2) { x = Math.random() * canvas.width; y = canvas.height + 20; }
+      else { x = -20; y = Math.random() * canvas.height; }
+      
+      const angle = Math.atan2(player.y - y, player.x - x);
+      const speed = 2.2 + Math.random() * 2.8 + (score * 0.05);
+      enemies.push({ x, y, r: 9 + Math.random() * 6, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed });
+    }
+
+    function createExplosion(x, y) {
+      for (let i = 0; i < 20; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          life: 1,
+          color: Math.random() > 0.5 ? '#38bdf8' : '#ef4444'
+        });
+      }
+    }
+
+    function resetGame() {
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+      enemies = [];
+      particles = [];
+      score = 0;
+      scoreVal.textContent = 0;
+      isRunning = true;
+      startOverlay.style.display = 'none';
+      gameOverOverlay.style.display = 'none';
+      requestAnimationFrame(gameLoop);
+    }
+
+    function gameOver() {
+      isRunning = false;
+      createExplosion(player.x, player.y);
+      if (score > best) {
+        best = score;
+        localStorage.setItem('qd_best', best);
+        bestVal.textContent = best;
+      }
+      finalScore.textContent = score;
+      gameOverOverlay.style.display = 'flex';
+    }
+
+    function gameLoop() {
+      if (!isRunning) return;
+
+      if ((keys['ArrowUp'] || keys['w']) && player.y > player.r) player.y -= player.speed;
+      if ((keys['ArrowDown'] || keys['s']) && player.y < canvas.height - player.r) player.y += player.speed;
+      if ((keys['ArrowLeft'] || keys['a']) && player.x > player.r) player.x -= player.speed;
+      if ((keys['ArrowRight'] || keys['d']) && player.x < canvas.width - player.r) player.x += player.speed;
+
+      ctx.fillStyle = 'rgba(3, 7, 18, 0.25)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#38bdf8';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      spawnTimer++;
+      if (spawnTimer % Math.max(16, 45 - Math.floor(score / 3)) === 0) {
+        spawnEnemy();
+        score++;
+        scoreVal.textContent = score;
+      }
+
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.x += e.vx;
+        e.y += e.vy;
+
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#f43f5e';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#f43f5e';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        const dist = Math.hypot(player.x - e.x, player.y - e.y);
+        if (dist < player.r + e.r) {
+          gameOver();
+          return;
+        }
+
+        if (e.x < -40 || e.x > canvas.width + 40 || e.y < -40 || e.y > canvas.height + 40) {
+          enemies.splice(i, 1);
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.03;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.fillRect(p.x, p.y, 3, 3);
+        ctx.globalAlpha = 1;
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    document.getElementById('startBtn').addEventListener('click', resetGame);
+    document.getElementById('restartBtn').addEventListener('click', resetGame);
+  </script>
+</body>
+</html>
